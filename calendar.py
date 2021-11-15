@@ -412,4 +412,4 @@ class OzeCalendarData:
     @staticmethod
     def get_end_date(obj):
         """Return the end datetime as determined by dateFin."""
-        return OzeCalendarData.to_hass_date(obj.dateFin)
+        return datetime.fromisoformat(obj["dateFin"].replace("Z", "+00:00"))
