@@ -320,14 +320,14 @@ class OzeCalendarData:
 
         event_list = []
         for event_json in event_list_json:
-            _LOGGER.debug("Processing event '%s'...", event_json)
+            _LOGGER.debug("Processing event '%s'", event_json)
             data = {
                 "uid": event_json["_id"],
                 "summary": event_json["matieres"][0]["libelle"],
                 "start": self.to_hass_date(event_json["dateDebut"]),
                 "end": self.to_hass_date(event_json["dateFin"]),
-                "location": event_json["classes"][0]["libelle"]
-                if "classes" in event_json and event_json["classes"]
+                "location": event_json["salles"][0]["libelle"]
+                if "salles" in event_json and event_json["salles"]
                 else "",
                 "description": (
                     event_json["profs"][0]["nom"]
@@ -337,6 +337,13 @@ class OzeCalendarData:
                 if "profs" in event_json and event_json["profs"]
                 else "",
             }
+            if event_json["_deletedStatus"] == 1:
+                data["attendees"] = [
+                    {
+                        "self": True,
+                        "responseStatus": "declined",
+                    }
+                ]
 
             data["start"] = get_date(data["start"]).isoformat()
             data["end"] = get_date(data["end"]).isoformat()
@@ -373,16 +380,27 @@ class OzeCalendarData:
             return
 
         # Populate the entity attributes with the event values
+        _LOGGER.debug("Processing event '%s'", event_json)
         self.event = {
             "uid": event_json["_id"],
             "summary": event_json["matieres"][0]["libelle"],
             "start": self.to_hass_date(event_json["dateDebut"]),
             "end": self.to_hass_date(event_json["dateFin"]),
-            "location": event_json["classes"][0]["libelle"],
+            "location": event_json["salles"][0]["libelle"]
+            if "salles" in event_json and event_json["salles"]
+            else "",
             "description": event_json["profs"][0]["nom"]
             + " "
             + event_json["profs"][0]["prenom"],
         }
+        if event_json["_deletedStatus"] == 1:
+            self.event["attendees"] = [
+                {
+                    "self": True,
+                    "responseStatus": "declined",
+                }
+            ]
+
 
     @staticmethod
     def is_over(event_json):
