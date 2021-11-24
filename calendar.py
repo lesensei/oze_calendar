@@ -267,6 +267,38 @@ class OzeConnection:
             return
         return res.json()
 
+    def get_oze_punishments(
+        self,
+        uid,
+        etab,
+        start_date: datetime = None,
+        end_date: datetime = None,
+        days: int = 1,
+    ):
+        """Get punishments for a given pupil (uid = student id)"""
+        if not self.is_connected():
+            self.connect()
+        start = start_date or dt.start_of_local_day()
+        end = end_date or (dt.start_of_local_day() + timedelta(days=days))
+        params = {
+            "ctx_profil": self.profil,
+            "ctx_etab": etab,
+            "aUserId": uid,
+            "aDateDebut": start.astimezone().replace(microsecond=0).isoformat()[:-6]
+            + "Z",
+            "aDateFin": end.astimezone().replace(microsecond=0).isoformat()[:-6] + "Z",
+            "aIsPunitionNonExecutee": "true",
+        }
+        punish_url = urljoin(self.api_url, "/v1/viescolaire/punition")
+        _LOGGER.debug("Getting '%s' with params '%s'", punish_url, json.dumps(params))
+        res = self.sess.get(punish_url, params=params)
+        if res.status_code != 200:
+            _LOGGER.error(
+                "Error fetching Oze punishments for '%s': '%s'", uid, res.reason
+            )
+            return
+        return res.json()
+
 
 class OzeCalendarEventDevice(CalendarEventDevice):
     """A device for getting the next class from a Oze Calendar."""
@@ -350,6 +382,40 @@ class OzeCalendarData:
 
             event_list.append(data)
 
+        event_list_json = await hass.async_add_executor_job(
+            self.oze.get_oze_punishments, self.uid, self.etab, start_date, end_date
+        )
+
+        for event_json in event_list_json:
+            _LOGGER.debug("Processing event '%s'", event_json)
+            if event_json["typePunition"]["needPeriode"] == True:
+                data = {
+                    "uid": event_json["_id"],
+                    "summary": event_json["typePunition"]["libelle"],
+                    "start": self.to_hass_date(event_json["dateDebut"]),
+                    "end": self.to_hass_date(event_json["dateFin"]),
+                    "description": (
+                        event_json["responsableSuivi"]["nom"]
+                        + " "
+                        + event_json["responsableSuivi"]["prenom"]
+                    )
+                    if "responsableSuivi" in event_json
+                    and event_json["responsableSuivi"]
+                    else "",
+                }
+                if event_json["_deletedStatus"] == 1:
+                    data["attendees"] = [
+                        {
+                            "self": True,
+                            "responseStatus": "declined",
+                        }
+                    ]
+
+                data["start"] = get_date(data["start"]).isoformat()
+                data["end"] = get_date(data["end"]).isoformat()
+
+                event_list.append(data)
+
         return event_list
 
     @Throttle(MIN_TIME_BETWEEN_UPDATES)
@@ -400,7 +466,6 @@ class OzeCalendarData:
                     "responseStatus": "declined",
                 }
             ]
-
 
     @staticmethod
     def is_over(event_json):
